@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BuySide CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>body{margin:0}*{box-sizing:border-box}</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide-react@0.383.0/dist/umd/lucide-react.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+    const {
+      LayoutGrid, Table2, List, Plus, Settings2, Users, Kanban, X, Trash2,
+      ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Check,
+      Search, GripVertical, ClipboardList, Star, Phone, Mail, Tag, CircleDollarSign,
+      Package, TrendingUp, AlertTriangle, PackagePlus
+    } = lucideReact;
+
+
+/* ---------------- color system for stages & tags ---------------- */
+const PALETTE = {
+  slate:   { dot: "bg-slate-500",   soft: "bg-slate-100 text-slate-700",     ring: "border-slate-300" },
+  sky:     { dot: "bg-sky-500",     soft: "bg-sky-100 text-sky-800",         ring: "border-sky-300" },
+  teal:    { dot: "bg-teal-500",    soft: "bg-teal-100 text-teal-800",       ring: "border-teal-300" },
+  emerald: { dot: "bg-emerald-500", soft: "bg-emerald-100 text-emerald-800", ring: "border-emerald-300" },
+  amber:   { dot: "bg-amber-500",   soft: "bg-amber-100 text-amber-800",     ring: "border-amber-300" },
+  orange:  { dot: "bg-orange-500",  soft: "bg-orange-100 text-orange-800",   ring: "border-orange-300" },
+  rose:    { dot: "bg-rose-500",    soft: "bg-rose-100 text-rose-800",       ring: "border-rose-300" },
+  violet:  { dot: "bg-violet-500",  soft: "bg-violet-100 text-violet-800",   ring: "border-violet-300" },
+  indigo:  { dot: "bg-indigo-500",  soft: "bg-indigo-100 text-indigo-800",   ring: "border-indigo-300" },
+};
+const COLOR_KEYS = Object.keys(PALETTE);
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* ---------------- seed data (first run) ---------------- */
+const seedData = () => {
+  const stages = [
+    { id: "s1", name: "Sourcing",     color: "slate" },
+    { id: "s2", name: "Samples",      color: "sky" },
+    { id: "s3", name: "Negotiation",  color: "amber" },
+    { id: "s4", name: "PO Issued",    color: "violet" },
+    { id: "s5", name: "Delivered",    color: "emerald" },
+  ];
+  const templates = [
+    {
+      id: "t1", name: "New supplier onboarding",
+      items: ["Request company docs & certifications", "Verify references", "Request product samples", "Agree payment terms", "Sign supply agreement"],
+    },
+    {
+      id: "t2", name: "Purchase order checklist",
+      items: ["Confirm final unit price", "Confirm lead time", "Issue PO", "Receive order confirmation", "Track shipment", "QA on arrival"],
+    },
+  ];
+  const suppliers = [
+    { id: "p1", name: "Greenline Distribution", contact: "Dana Levi", email: "dana@greenline.example", phone: "+972-50-000-0000", category: "Flower", rating: 4, notes: "Reliable lead times. Best for premium tiers." },
+    { id: "p2", name: "Northbound Trading", contact: "Avi Cohen", email: "avi@northbound.example", phone: "+972-52-000-0000", category: "Packaging", rating: 3, notes: "Good pricing, slower on custom runs." },
+  ];
+  const tags = [
+    { id: "g1", name: "Priority", color: "rose" },
+    { id: "g2", name: "Q3", color: "indigo" },
+  ];
+  const products = [
+    { id: "pr1", name: "Lemon Strawz", category: "Hybrid", sku: "LSZ-01", unit: "g", stock: 1200, weeklyDemand: 350, leadTimeWeeks: 3, supplierId: "p1", notes: "" },
+    { id: "pr2", name: "Kush Mints", category: "Indica", sku: "KMT-01", unit: "g", stock: 4200, weeklyDemand: 500, leadTimeWeeks: 3, supplierId: "p1", notes: "" },
+    { id: "pr3", name: "Tiger Cake", category: "Hybrid", sku: "TGC-01", unit: "g", stock: 600, weeklyDemand: 400, leadTimeWeeks: 4, supplierId: "p1", notes: "" },
+  ];
+  const deals = [
+    {
+      id: "d1", title: "Premium line restock", supplierId: "p1", stageId: "s3",
+      value: 48000, currency: "₪", expected: "2026-07-01", tags: ["g1"],
+      notes: "Targeting 10% below last quarter's price.",
+      custom: {},
+      items: [{ productId: "pr1", qty: 2000 }],
+      checklist: [
+        { id: uid(), text: "Confirm final unit price", done: true },
+        { id: uid(), text: "Confirm lead time", done: false },
+        { id: uid(), text: "Issue PO", done: false },
+      ],
+    },
+    {
+      id: "d2", title: "Custom packaging run", supplierId: "p2", stageId: "s2",
+      value: 12500, currency: "₪", expected: "2026-06-25", tags: ["g2"],
+      notes: "", custom: {}, items: [], checklist: [],
+    },
+  ];
+  return { stages, templates, suppliers, deals, tags, products, customFields: [{ id: "c1", name: "PO #" }] };
+};
+
+/* ---------------- small shared bits ---------------- */
+const Chip = ({ color = "slate", children, onRemove }) => (
+  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${PALETTE[color].soft}`}>
+    {children}
+    {onRemove && <button onClick={onRemove} className="opacity-60 hover:opacity-100"><X size={11} /></button>}
+  </span>
+);
+
+const Progress = ({ items }) => {
+  if (!items || items.length === 0) return null;
+  const done = items.filter((i) => i.done).length;
+  const pct = Math.round((done / items.length) * 100);
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div className="h-1.5 flex-1 bg-stone-200 rounded-full overflow-hidden">
+        <div className="h-full bg-teal-600 rounded-full transition-all" style={{ width: pct + "%" }} />
+      </div>
+      <span className="text-xs text-stone-500 tabular-nums">{done}/{items.length}</span>
+    </div>
+  );
+};
+
+const Field = ({ label, children }) => (
+  <label className="block">
+    <span className="block text-xs font-semibold uppercase tracking-wide text-stone-500 mb-1">{label}</span>
+    {children}
+  </label>
+);
+
+const inputCls = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600";
+
+const Modal = ({ title, onClose, children, wide }) => (
+  <div className="fixed inset-0 z-50 flex items-start justify-center bg-stone-900/40 p-4 overflow-y-auto" onClick={onClose}>
+    <div
+      className={`bg-white rounded-2xl shadow-xl w-full ${wide ? "max-w-2xl" : "max-w-lg"} mt-8 mb-8`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+        <h2 className="font-semibold text-stone-800">{title}</h2>
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500"><X size={18} /></button>
+      </div>
+      <div className="px-5 py-4">{children}</div>
+    </div>
+  </div>
+);
+
+/* ---------------- main app ---------------- */
+export default function SupplierCRM() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("pipeline"); // pipeline | suppliers | settings
+  const [view, setView] = useState("kanban"); // kanban | table | list
+  const [query, setQuery] = useState("");
+  const [editingDeal, setEditingDeal] = useState(null);   // deal object or "new"
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [sortBy, setSortBy] = useState({ key: "title", dir: 1 });
+  const [dragId, setDragId] = useState(null);
+  const [saved, setSaved] = useState(true);
+  const saveTimer = useRef(null);
+
+  /* load from server + live WebSocket sync */
+  useEffect(() => {
+    // HTTP load
+    fetch("/api/data")
+      .then(r => r.json())
+      .then(({ data: d }) => {
+        if (d) {
+          setData({ products: [], ...d, deals: (d.deals || []).map(x => ({ items: [], ...x })) });
+        } else {
+          setData(seedData());
+        }
+      })
+      .catch(() => setData(seedData()));
+
+    // WebSocket for live updates from other users
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${proto}://${location.host}`);
+    socket.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "update" && msg.data) {
+        setData(prev => {
+          // Only apply if actually different (avoid re-render loops)
+          if (JSON.stringify(prev) === JSON.stringify(msg.data)) return prev;
+          return { products: [], ...msg.data, deals: (msg.data.deals || []).map(x => ({ items: [], ...x })) };
+        });
+      }
+    };
+    return () => socket.close();
+  }, []);
+
+  /* save (debounced) */
+  const update = (fn) => {
+    setData((prev) => {
+      const next = typeof fn === "function" ? fn(prev) : fn;
+      setSaved(false);
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        try {
+          await fetch("/api/data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(next)
+          });
+        } catch(e) { console.error(e); }
+        setSaved(true);
+      }, 600);
+      return next;
+    });
+  };
+
+  const supplierName = (id) => data.suppliers.find((s) => s.id === id)?.name || "—";
+  const stageOf = (id) => data.stages.find((s) => s.id === id);
+
+  const filteredDeals = useMemo(() => {
+    if (!data) return [];
+    const q = query.trim().toLowerCase();
+    if (!q) return data.deals;
+    return data.deals.filter(
+      (d) =>
+        d.title.toLowerCase().includes(q) ||
+        supplierName(d.supplierId).toLowerCase().includes(q) ||
+        (d.notes || "").toLowerCase().includes(q)
+    );
+  }, [data, query]);
+
+  if (!data)
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-stone-100 text-stone-500 text-sm">
+        Loading your workspace…
+      </div>
+    );
+
+  /* ---------- deal mutations ---------- */
+  const saveDeal = (deal) => {
+    update((p) => {
+      const exists = p.deals.some((d) => d.id === deal.id);
+      return { ...p, deals: exists ? p.deals.map((d) => (d.id === deal.id ? deal : d)) : [...p.deals, deal] };
+    });
+    setEditingDeal(null);
+  };
+  const deleteDeal = (id) => {
+    update((p) => ({ ...p, deals: p.deals.filter((d) => d.id !== id) }));
+    setEditingDeal(null);
+  };
+  const moveDeal = (id, stageId) =>
+    update((p) => ({ ...p, deals: p.deals.map((d) => (d.id === id ? { ...d, stageId } : d)) }));
+
+  const shiftStageOfDeal = (deal, dir) => {
+    const idx = data.stages.findIndex((s) => s.id === deal.stageId);
+    const next = data.stages[idx + dir];
+    if (next) moveDeal(deal.id, next.id);
+  };
+
+  /* ---------- supplier mutations ---------- */
+  const saveSupplier = (s) => {
+    update((p) => {
+      const exists = p.suppliers.some((x) => x.id === s.id);
+      return { ...p, suppliers: exists ? p.suppliers.map((x) => (x.id === s.id ? s : x)) : [...p.suppliers, s] };
+    });
+    setEditingSupplier(null);
+  };
+  const deleteSupplier = (id) => {
+    update((p) => ({
+      ...p,
+      suppliers: p.suppliers.filter((s) => s.id !== id),
+      deals: p.deals.map((d) => (d.supplierId === id ? { ...d, supplierId: null } : d)),
+    }));
+    setEditingSupplier(null);
+  };
+
+  /* ---------- product mutations & inventory math ---------- */
+  const saveProduct = (pr) => {
+    update((p) => {
+      const exists = p.products.some((x) => x.id === pr.id);
+      return { ...p, products: exists ? p.products.map((x) => (x.id === pr.id ? pr : x)) : [...p.products, pr] };
+    });
+    setEditingProduct(null);
+  };
+  const deleteProduct = (id) => {
+    update((p) => ({
+      ...p,
+      products: p.products.filter((x) => x.id !== id),
+      deals: p.deals.map((d) => ({ ...d, items: (d.items || []).filter((it) => it.productId !== id) })),
+    }));
+    setEditingProduct(null);
+  };
+
+  // Quantities on open deals (any stage except the last one) count as incoming stock.
+  const incomingFor = (productId) => {
+    const lastStage = data.stages[data.stages.length - 1]?.id;
+    return data.deals
+      .filter((d) => d.stageId !== lastStage)
+      .reduce((sum, d) => sum + (d.items || []).filter((it) => it.productId === productId).reduce((a, it) => a + (Number(it.qty) || 0), 0), 0);
+  };
+
+  const startRestockDeal = (product, suggestedQty) => {
+    setTab("pipeline");
+    setEditingDeal({
+      id: uid(),
+      title: `Restock: ${product.name}`,
+      supplierId: product.supplierId || data.suppliers[0]?.id || null,
+      stageId: data.stages[0]?.id,
+      value: "", currency: "₪", expected: "",
+      tags: [], notes: "", custom: {},
+      items: suggestedQty > 0 ? [{ productId: product.id, qty: suggestedQty }] : [{ productId: product.id, qty: "" }],
+      checklist: [],
+    });
+  };
+
+  /* ---------- header ---------- */
+  const TabBtn = ({ id, icon: Icon, label }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+        tab === id ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-200"
+      }`}
+    >
+      <Icon size={15} /> {label}
+    </button>
+  );
+
+  const ViewBtn = ({ id, icon: Icon, label }) => (
+    <button
+      onClick={() => setView(id)}
+      title={label}
+      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium ${
+        view === id ? "bg-white shadow text-stone-900" : "text-stone-500 hover:text-stone-800"
+      }`}
+    >
+      <Icon size={14} /> <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+
+  return (
+    <div className="min-h-screen bg-stone-100 text-stone-800" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+      {/* top bar */}
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 mr-2">
+            <div className="w-8 h-8 rounded-xl bg-teal-700 text-white flex items-center justify-center font-bold">B</div>
+            <div>
+              <div className="font-bold leading-tight">BuySide CRM</div>
+              <div className="text-[11px] text-stone-400 leading-tight">{saved ? "All changes saved" : "Saving…"}</div>
+            </div>
+          </div>
+          <nav className="flex items-center gap-1 bg-stone-100 rounded-xl p-1">
+            <TabBtn id="pipeline" icon={Kanban} label="Pipeline" />
+            <TabBtn id="products" icon={Package} label="Products" />
+            <TabBtn id="suppliers" icon={Users} label="Suppliers" />
+            <TabBtn id="settings" icon={Settings2} label="Customize" />
+          </nav>
+          {tab === "pipeline" && (
+            <>
+              <div className="flex items-center gap-1 bg-stone-100 rounded-xl p-1 ml-auto">
+                <ViewBtn id="kanban" icon={LayoutGrid} label="Board" />
+                <ViewBtn id="table" icon={Table2} label="Table" />
+                <ViewBtn id="list" icon={List} label="List" />
+              </div>
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-2.5 text-stone-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search deals…"
+                  className="pl-8 pr-3 py-2 text-sm border border-stone-300 rounded-lg bg-white w-44 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+              <button
+                onClick={() => setEditingDeal("new")}
+                className="flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-3 py-2 rounded-lg"
+              >
+                <Plus size={15} /> New deal
+              </button>
+            </>
+          )}
+          {tab === "suppliers" && (
+            <button
+              onClick={() => setEditingSupplier("new")}
+              className="ml-auto flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-3 py-2 rounded-lg"
+            >
+              <Plus size={15} /> New supplier
+            </button>
+          )}
+          {tab === "products" && (
+            <button
+              onClick={() => setEditingProduct("new")}
+              className="ml-auto flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-3 py-2 rounded-lg"
+            >
+              <Plus size={15} /> New product
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-5">
+        {tab === "pipeline" && view === "kanban" && (
+          <KanbanView
+            data={data} deals={filteredDeals} onOpen={setEditingDeal}
+            onDropDeal={moveDeal} dragId={dragId} setDragId={setDragId}
+            supplierName={supplierName} shiftStage={shiftStageOfDeal}
+          />
+        )}
+        {tab === "pipeline" && view === "table" && (
+          <TableView data={data} deals={filteredDeals} onOpen={setEditingDeal} supplierName={supplierName} sortBy={sortBy} setSortBy={setSortBy} stageOf={stageOf} />
+        )}
+        {tab === "pipeline" && view === "list" && (
+          <ListView data={data} deals={filteredDeals} onOpen={setEditingDeal} supplierName={supplierName} stageOf={stageOf} />
+        )}
+        {tab === "suppliers" && (
+          <SuppliersView data={data} onOpen={setEditingSupplier} />
+        )}
+        {tab === "products" && (
+          <ProductsView data={data} onOpen={setEditingProduct} incomingFor={incomingFor} onRestock={startRestockDeal} supplierName={supplierName} update={update} />
+        )}
+        {tab === "settings" && <SettingsView data={data} update={update} />}
+      </main>
+
+      {editingDeal && (
+        <DealModal
+          deal={editingDeal === "new" ? null : editingDeal}
+          data={data}
+          onSave={saveDeal}
+          onDelete={deleteDeal}
+          onClose={() => setEditingDeal(null)}
+        />
+      )}
+      {editingSupplier && (
+        <SupplierModal
+          supplier={editingSupplier === "new" ? null : editingSupplier}
+          onSave={saveSupplier}
+          onDelete={deleteSupplier}
+          onClose={() => setEditingSupplier(null)}
+        />
+      )}
+      {editingProduct && (
+        <ProductModal
+          product={editingProduct === "new" ? null : editingProduct}
+          data={data}
+          onSave={saveProduct}
+          onDelete={deleteProduct}
+          onClose={() => setEditingProduct(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ================= Kanban ================= */
+function KanbanView({ data, deals, onOpen, onDropDeal, dragId, setDragId, supplierName, shiftStage }) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4 items-start">
+      {data.stages.map((stage) => {
+        const items = deals.filter((d) => d.stageId === stage.id);
+        const total = items.reduce((a, d) => a + (Number(d.value) || 0), 0);
+        return (
+          <div
+            key={stage.id}
+            className="w-72 shrink-0 bg-stone-50 border border-stone-200 rounded-2xl"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => dragId && onDropDeal(dragId, stage.id)}
+          >
+            <div className="px-3 py-2.5 flex items-center gap-2 border-b border-stone-200">
+              <span className={`w-2.5 h-2.5 rounded-full ${PALETTE[stage.color].dot}`} />
+              <span className="font-semibold text-sm">{stage.name}</span>
+              <span className="text-xs text-stone-400 ml-auto tabular-nums">
+                {items.length} · {total ? total.toLocaleString() : 0}
+              </span>
+            </div>
+            <div className="p-2 space-y-2 min-h-16">
+              {items.map((d) => (
+                <div
+                  key={d.id}
+                  draggable
+                  onDragStart={() => setDragId(d.id)}
+                  onDragEnd={() => setDragId(null)}
+                  onClick={() => onOpen(d)}
+                  className="bg-white border border-stone-200 rounded-xl p-3 shadow-sm hover:shadow cursor-pointer space-y-2"
+                >
+                  <div className="flex items-start gap-2">
+                    <GripVertical size={14} className="text-stone-300 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm leading-snug">{d.title}</div>
+                      <div className="text-xs text-stone-500 truncate">{supplierName(d.supplierId)}</div>
+                      {(d.items || []).length > 0 && (
+                        <div className="text-[11px] text-teal-700 truncate flex items-center gap-1 mt-0.5">
+                          <Package size={11} />
+                          {d.items.map((it) => {
+                            const pr = data.products.find((x) => x.id === it.productId);
+                            return pr ? `${pr.name} ×${Number(it.qty).toLocaleString()}` : null;
+                          }).filter(Boolean).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {d.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {d.tags.map((tid) => {
+                        const t = data.tags.find((x) => x.id === tid);
+                        return t ? <Chip key={tid} color={t.color}>{t.name}</Chip> : null;
+                      })}
+                    </div>
+                  )}
+                  <Progress items={d.checklist} />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-stone-700 tabular-nums">
+                      {d.value ? `${d.currency || ""}${Number(d.value).toLocaleString()}` : ""}
+                    </span>
+                    <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => shiftStage(d, -1)} className="p-1 rounded hover:bg-stone-100 text-stone-400" title="Previous stage"><ChevronLeft size={14} /></button>
+                      <button onClick={() => shiftStage(d, 1)} className="p-1 rounded hover:bg-stone-100 text-stone-400" title="Next stage"><ChevronRight size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {items.length === 0 && (
+                <div className="text-xs text-stone-400 text-center py-4 border border-dashed border-stone-200 rounded-xl">
+                  Drop deals here
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ================= Table ================= */
+function TableView({ data, deals, onOpen, supplierName, sortBy, setSortBy, stageOf }) {
+  const cols = [
+    { key: "title", label: "Deal" },
+    { key: "supplier", label: "Supplier" },
+    { key: "stage", label: "Stage" },
+    { key: "value", label: "Value" },
+    { key: "expected", label: "Expected" },
+    { key: "progress", label: "Checklist" },
+  ];
+  const val = (d, key) => {
+    if (key === "supplier") return supplierName(d.supplierId);
+    if (key === "stage") return data.stages.findIndex((s) => s.id === d.stageId);
+    if (key === "value") return Number(d.value) || 0;
+    if (key === "progress") return d.checklist?.length ? d.checklist.filter((i) => i.done).length / d.checklist.length : -1;
+    return (d[key] || "").toString().toLowerCase();
+  };
+  const sorted = [...deals].sort((a, b) => (val(a, sortBy.key) > val(b, sortBy.key) ? sortBy.dir : -sortBy.dir));
+  return (
+    <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
+            <tr>
+              {cols.map((c) => (
+                <th key={c.key} className="text-left px-4 py-3 font-semibold cursor-pointer select-none whitespace-nowrap"
+                  onClick={() => setSortBy((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }))}>
+                  <span className="inline-flex items-center gap-1">
+                    {c.label}
+                    {sortBy.key === c.key && (sortBy.dir === 1 ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((d) => {
+              const st = stageOf(d.stageId);
+              return (
+                <tr key={d.id} onClick={() => onOpen(d)} className="border-t border-stone-100 hover:bg-stone-50 cursor-pointer">
+                  <td className="px-4 py-3 font-medium">{d.title}</td>
+                  <td className="px-4 py-3 text-stone-600">{supplierName(d.supplierId)}</td>
+                  <td className="px-4 py-3">{st && <Chip color={st.color}>{st.name}</Chip>}</td>
+                  <td className="px-4 py-3 tabular-nums">{d.value ? `${d.currency || ""}${Number(d.value).toLocaleString()}` : "—"}</td>
+                  <td className="px-4 py-3 text-stone-600 whitespace-nowrap">{d.expected || "—"}</td>
+                  <td className="px-4 py-3 w-44"><Progress items={d.checklist} /></td>
+                </tr>
+              );
+            })}
+            {sorted.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-stone-400">No deals yet — create one to get started.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ================= List ================= */
+function ListView({ data, deals, onOpen, supplierName, stageOf }) {
+  return (
+    <div className="space-y-5 max-w-3xl">
+      {data.stages.map((stage) => {
+        const items = deals.filter((d) => d.stageId === stage.id);
+        if (items.length === 0) return null;
+        return (
+          <section key={stage.id}>
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-600 mb-2">
+              <span className={`w-2 h-2 rounded-full ${PALETTE[stage.color].dot}`} /> {stage.name}
+              <span className="text-stone-400 font-normal">({items.length})</span>
+            </h3>
+            <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100">
+              {items.map((d) => (
+                <button key={d.id} onClick={() => onOpen(d)} className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-stone-50">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{d.title}</div>
+                    <div className="text-xs text-stone-500">{supplierName(d.supplierId)}{d.expected ? ` · due ${d.expected}` : ""}</div>
+                  </div>
+                  <div className="w-36 hidden sm:block"><Progress items={d.checklist} /></div>
+                  <span className="text-sm font-semibold tabular-nums text-stone-700">
+                    {d.value ? `${d.currency || ""}${Number(d.value).toLocaleString()}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      {deals.length === 0 && <div className="text-center text-stone-400 py-12">No deals match.</div>}
+    </div>
+  );
+}
+
+/* ================= Suppliers ================= */
+function SuppliersView({ data, onOpen }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {data.suppliers.map((s) => {
+        const active = data.deals.filter((d) => d.supplierId === s.id).length;
+        return (
+          <button key={s.id} onClick={() => onOpen(s)} className="text-left bg-white border border-stone-200 rounded-2xl p-4 hover:shadow-md transition-shadow space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="font-semibold">{s.name}</div>
+                <div className="text-xs text-stone-500">{s.category || "—"}</div>
+              </div>
+              <div className="flex">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star key={n} size={13} className={n <= (s.rating || 0) ? "text-amber-500 fill-amber-400" : "text-stone-300"} />
+                ))}
+              </div>
+            </div>
+            <div className="text-xs text-stone-600 space-y-1">
+              {s.contact && <div className="flex items-center gap-1.5"><Users size={12} className="text-stone-400" />{s.contact}</div>}
+              {s.email && <div className="flex items-center gap-1.5"><Mail size={12} className="text-stone-400" />{s.email}</div>}
+              {s.phone && <div className="flex items-center gap-1.5"><Phone size={12} className="text-stone-400" />{s.phone}</div>}
+            </div>
+            <div className="text-xs text-stone-400">{active} active deal{active === 1 ? "" : "s"}</div>
+          </button>
+        );
+      })}
+      {data.suppliers.length === 0 && (
+        <div className="col-span-full text-center text-stone-400 py-12">No suppliers yet — add your first one.</div>
+      )}
+    </div>
+  );
+}
+
+/* ================= Settings / Customize ================= */
+function SettingsView({ data, update }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
+      <StagesEditor data={data} update={update} />
+      <TemplatesEditor data={data} update={update} />
+      <TagsEditor data={data} update={update} />
+      <CustomFieldsEditor data={data} update={update} />
+    </div>
+  );
+}
+
+function Card({ title, subtitle, children }) {
+  return (
+    <section className="bg-white border border-stone-200 rounded-2xl p-5">
+      <h3 className="font-semibold">{title}</h3>
+      <p className="text-xs text-stone-500 mb-4">{subtitle}</p>
+      {children}
+    </section>
+  );
+}
+
+function StagesEditor({ data, update }) {
+  const [name, setName] = useState("");
+  const move = (i, dir) =>
+    update((p) => {
+      const s = [...p.stages];
+      const j = i + dir;
+      if (j < 0 || j >= s.length) return p;
+      [s[i], s[j]] = [s[j], s[i]];
+      return { ...p, stages: s };
+    });
+  const rename = (id, v) => update((p) => ({ ...p, stages: p.stages.map((s) => (s.id === id ? { ...s, name: v } : s)) }));
+  const recolor = (id) =>
+    update((p) => ({
+      ...p,
+      stages: p.stages.map((s) =>
+        s.id === id ? { ...s, color: COLOR_KEYS[(COLOR_KEYS.indexOf(s.color) + 1) % COLOR_KEYS.length] } : s
+      ),
+    }));
+  const remove = (id) =>
+    update((p) => {
+      if (p.stages.length <= 1) return p;
+      const fallback = p.stages.find((s) => s.id !== id).id;
+      return {
+        ...p,
+        stages: p.stages.filter((s) => s.id !== id),
+        deals: p.deals.map((d) => (d.stageId === id ? { ...d, stageId: fallback } : d)),
+      };
+    });
+  const add = () => {
+    if (!name.trim()) return;
+    update((p) => ({ ...p, stages: [...p.stages, { id: uid(), name: name.trim(), color: COLOR_KEYS[p.stages.length % COLOR_KEYS.length] }] }));
+    setName("");
+  };
+  return (
+    <Card title="Deal stages" subtitle="Rename, reorder, recolor, or add stages. Deals in a deleted stage move to your first stage.">
+      <div className="space-y-2">
+        {data.stages.map((s, i) => (
+          <div key={s.id} className="flex items-center gap-2">
+            <button onClick={() => recolor(s.id)} title="Change color" className={`w-5 h-5 rounded-full ${PALETTE[s.color].dot} border-2 border-white shadow`} />
+            <input value={s.name} onChange={(e) => rename(s.id, e.target.value)} className={inputCls + " flex-1"} />
+            <button onClick={() => move(i, -1)} className="p-1.5 rounded hover:bg-stone-100 text-stone-400"><ChevronUp size={15} /></button>
+            <button onClick={() => move(i, 1)} className="p-1.5 rounded hover:bg-stone-100 text-stone-400"><ChevronDown size={15} /></button>
+            <button onClick={() => remove(s.id)} className="p-1.5 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600"><Trash2 size={15} /></button>
+          </div>
+        ))}
+        <div className="flex gap-2 pt-1">
+          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="New stage name" className={inputCls + " flex-1"} />
+          <button onClick={add} className="px-3 py-2 bg-stone-900 text-white rounded-lg text-sm font-medium">Add</button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function TemplatesEditor({ data, update }) {
+  const [open, setOpen] = useState(null);
+  const [newName, setNewName] = useState("");
+  const [newItem, setNewItem] = useState("");
+  const addTemplate = () => {
+    if (!newName.trim()) return;
+    const t = { id: uid(), name: newName.trim(), items: [] };
+    update((p) => ({ ...p, templates: [...p.templates, t] }));
+    setNewName("");
+    setOpen(t.id);
+  };
+  const patch = (id, fn) => update((p) => ({ ...p, templates: p.templates.map((t) => (t.id === id ? fn(t) : t)) }));
+  return (
+    <Card title="Checklist templates" subtitle="Reusable checklists you can apply to any deal in one click.">
+      <div className="space-y-2">
+        {data.templates.map((t) => (
+          <div key={t.id} className="border border-stone-200 rounded-xl">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <ClipboardList size={15} className="text-teal-700" />
+              <button onClick={() => setOpen(open === t.id ? null : t.id)} className="flex-1 text-left text-sm font-medium">
+                {t.name} <span className="text-stone-400 font-normal">· {t.items.length} steps</span>
+              </button>
+              <button onClick={() => update((p) => ({ ...p, templates: p.templates.filter((x) => x.id !== t.id) }))}
+                className="p-1.5 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600"><Trash2 size={14} /></button>
+              {open === t.id ? <ChevronUp size={15} className="text-stone-400" /> : <ChevronDown size={15} className="text-stone-400" />}
+            </div>
+            {open === t.id && (
+              <div className="px-3 pb-3 space-y-1.5">
+                {t.items.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs text-stone-400 w-4 tabular-nums">{i + 1}.</span>
+                    <input value={item}
+                      onChange={(e) => patch(t.id, (x) => ({ ...x, items: x.items.map((v, j) => (j === i ? e.target.value : v)) }))}
+                      className={inputCls + " flex-1"} />
+                    <button onClick={() => patch(t.id, (x) => ({ ...x, items: x.items.filter((_, j) => j !== i) }))}
+                      className="p-1.5 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600"><X size={13} /></button>
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && newItem.trim()) { patch(t.id, (x) => ({ ...x, items: [...x.items, newItem.trim()] })); setNewItem(""); } }}
+                    placeholder="Add a step and press Enter" className={inputCls + " flex-1"} />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <div className="flex gap-2 pt-1">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTemplate()} placeholder="New template name" className={inputCls + " flex-1"} />
+          <button onClick={addTemplate} className="px-3 py-2 bg-stone-900 text-white rounded-lg text-sm font-medium">Add</button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function TagsEditor({ data, update }) {
+  const [name, setName] = useState("");
+  const add = () => {
+    if (!name.trim()) return;
+    update((p) => ({ ...p, tags: [...p.tags, { id: uid(), name: name.trim(), color: COLOR_KEYS[(p.tags.length + 3) % COLOR_KEYS.length] }] }));
+    setName("");
+  };
+  return (
+    <Card title="Tags" subtitle="Label deals any way you like — priority, quarter, product line. Click a tag to cycle its color.">
+      <div className="flex flex-wrap gap-2 mb-3">
+        {data.tags.map((t) => (
+          <span key={t.id} className="inline-flex items-center gap-1">
+            <button
+              onClick={() => update((p) => ({ ...p, tags: p.tags.map((x) => x.id === t.id ? { ...x, color: COLOR_KEYS[(COLOR_KEYS.indexOf(x.color) + 1) % COLOR_KEYS.length] } : x) }))}>
+              <Chip color={t.color}>{t.name}</Chip>
+            </button>
+            <button onClick={() => update((p) => ({ ...p, tags: p.tags.filter((x) => x.id !== t.id), deals: p.deals.map((d) => ({ ...d, tags: (d.tags || []).filter((id) => id !== t.id) })) }))}
+              className="text-stone-400 hover:text-rose-600"><X size={12} /></button>
+          </span>
+        ))}
+        {data.tags.length === 0 && <span className="text-xs text-stone-400">No tags yet.</span>}
+      </div>
+      <div className="flex gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="New tag" className={inputCls + " flex-1"} />
+        <button onClick={add} className="px-3 py-2 bg-stone-900 text-white rounded-lg text-sm font-medium">Add</button>
+      </div>
+    </Card>
+  );
+}
+
+function CustomFieldsEditor({ data, update }) {
+  const [name, setName] = useState("");
+  const add = () => {
+    if (!name.trim()) return;
+    update((p) => ({ ...p, customFields: [...p.customFields, { id: uid(), name: name.trim() }] }));
+    setName("");
+  };
+  return (
+    <Card title="Custom deal fields" subtitle="Add extra fields that appear on every deal — PO number, Incoterms, payment terms, anything.">
+      <div className="space-y-2 mb-3">
+        {data.customFields.map((f) => (
+          <div key={f.id} className="flex items-center gap-2">
+            <input value={f.name}
+              onChange={(e) => update((p) => ({ ...p, customFields: p.customFields.map((x) => (x.id === f.id ? { ...x, name: e.target.value } : x)) }))}
+              className={inputCls + " flex-1"} />
+            <button onClick={() => update((p) => ({ ...p, customFields: p.customFields.filter((x) => x.id !== f.id) }))}
+              className="p-1.5 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600"><Trash2 size={15} /></button>
+          </div>
+        ))}
+        {data.customFields.length === 0 && <div className="text-xs text-stone-400">No custom fields yet.</div>}
+      </div>
+      <div className="flex gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="New field name" className={inputCls + " flex-1"} />
+        <button onClick={add} className="px-3 py-2 bg-stone-900 text-white rounded-lg text-sm font-medium">Add</button>
+      </div>
+    </Card>
+  );
+}
+
+/* ================= Deal modal ================= */
+function DealModal({ deal, data, onSave, onDelete, onClose }) {
+  const [d, setD] = useState(
+    deal || {
+      id: uid(), title: "", supplierId: data.suppliers[0]?.id || null,
+      stageId: data.stages[0]?.id, value: "", currency: "₪", expected: "",
+      tags: [], notes: "", custom: {}, items: [], checklist: [],
+    }
+  );
+  const isExisting = deal && data.deals.some((x) => x.id === deal.id);
+  const [newItem, setNewItem] = useState("");
+  const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
+
+  const applyTemplate = (tid) => {
+    const t = data.templates.find((x) => x.id === tid);
+    if (!t) return;
+    set("checklist", [...d.checklist, ...t.items.map((text) => ({ id: uid(), text, done: false }))]);
+  };
+
+  return (
+    <Modal title={isExisting ? "Edit deal" : "New deal"} onClose={onClose} wide>
+      <div className="space-y-4">
+        <Field label="Deal name">
+          <input autoFocus value={d.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Q3 premium restock" className={inputCls} />
+        </Field>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Supplier">
+            <select value={d.supplierId || ""} onChange={(e) => set("supplierId", e.target.value || null)} className={inputCls}>
+              <option value="">— none —</option>
+              {data.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Stage">
+            <select value={d.stageId} onChange={(e) => set("stageId", e.target.value)} className={inputCls}>
+              {data.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Value">
+            <div className="flex gap-2">
+              <input value={d.currency} onChange={(e) => set("currency", e.target.value)} className={inputCls + " w-14 text-center"} />
+              <input type="number" value={d.value} onChange={(e) => set("value", e.target.value)} placeholder="0" className={inputCls + " flex-1"} />
+            </div>
+          </Field>
+          <Field label="Expected date">
+            <input type="date" value={d.expected} onChange={(e) => set("expected", e.target.value)} className={inputCls} />
+          </Field>
+        </div>
+
+        {data.customFields.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {data.customFields.map((f) => (
+              <Field key={f.id} label={f.name}>
+                <input value={d.custom?.[f.id] || ""} onChange={(e) => set("custom", { ...d.custom, [f.id]: e.target.value })} className={inputCls} />
+              </Field>
+            ))}
+          </div>
+        )}
+
+        <Field label="Products in this deal">
+          <div className="space-y-1.5">
+            {(d.items || []).map((it, i) => {
+              const pr = data.products.find((x) => x.id === it.productId);
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={it.productId}
+                    onChange={(e) => set("items", d.items.map((x, j) => (j === i ? { ...x, productId: e.target.value } : x)))}
+                    className={inputCls + " flex-1"}
+                  >
+                    {data.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    value={it.qty}
+                    onChange={(e) => set("items", d.items.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))}
+                    placeholder="Qty"
+                    className={inputCls + " w-28"}
+                  />
+                  <span className="text-xs text-stone-400 w-6">{pr?.unit || ""}</span>
+                  <button onClick={() => set("items", d.items.filter((_, j) => j !== i))}
+                    className="p-1.5 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600"><X size={14} /></button>
+                </div>
+              );
+            })}
+            {data.products.length > 0 ? (
+              <button
+                onClick={() => set("items", [...(d.items || []), { productId: data.products[0].id, qty: "" }])}
+                className="text-sm text-teal-700 hover:text-teal-800 flex items-center gap-1 pt-1"
+              >
+                <Plus size={14} /> Add product
+              </button>
+            ) : (
+              <span className="text-xs text-stone-400">Add products in the Products tab first.</span>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Tags">
+          <div className="flex flex-wrap gap-2">
+            {data.tags.map((t) => {
+              const on = (d.tags || []).includes(t.id);
+              return (
+                <button key={t.id}
+                  onClick={() => set("tags", on ? d.tags.filter((x) => x !== t.id) : [...(d.tags || []), t.id])}
+                  className={`rounded-full transition-opacity ${on ? "" : "opacity-40 hover:opacity-70"}`}>
+                  <Chip color={t.color}>{on && <Check size={11} />}{t.name}</Chip>
+                </button>
+              );
+            })}
+            {data.tags.length === 0 && <span className="text-xs text-stone-400">Create tags in Customize.</span>}
+          </div>
+        </Field>
+
+        <Field label="Checklist">
+          <div className="space-y-1.5">
+            <Progress items={d.checklist} />
+            {d.checklist.map((item) => (
+              <div key={item.id} className="flex items-center gap-2 group">
+                <button
+                  onClick={() => set("checklist", d.checklist.map((x) => (x.id === item.id ? { ...x, done: !x.done } : x)))}
+                  className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${item.done ? "bg-teal-600 border-teal-600 text-white" : "border-stone-300 bg-white"}`}>
+                  {item.done && <Check size={12} />}
+                </button>
+                <span className={`text-sm flex-1 ${item.done ? "line-through text-stone-400" : ""}`}>{item.text}</span>
+                <button onClick={() => set("checklist", d.checklist.filter((x) => x.id !== item.id))}
+                  className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-rose-600"><X size={13} /></button>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-1">
+              <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && newItem.trim()) { set("checklist", [...d.checklist, { id: uid(), text: newItem.trim(), done: false }]); setNewItem(""); } }}
+                placeholder="Add an item and press Enter" className={inputCls + " flex-1"} />
+              {data.templates.length > 0 && (
+                <select onChange={(e) => { if (e.target.value) { applyTemplate(e.target.value); e.target.value = ""; } }} defaultValue="" className={inputCls + " w-44"}>
+                  <option value="" disabled>Apply template…</option>
+                  {data.templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+        </Field>
+
+        <Field label="Notes">
+          <textarea value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={3} className={inputCls} />
+        </Field>
+
+        <div className="flex items-center justify-between pt-2">
+          {isExisting ? (
+            <button onClick={() => onDelete(d.id)} className="text-sm text-rose-600 hover:text-rose-700 flex items-center gap-1"><Trash2 size={14} /> Delete deal</button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-stone-300 hover:bg-stone-50">Cancel</button>
+            <button onClick={() => d.title.trim() && onSave(d)} className="px-4 py-2 text-sm rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-medium">Save deal</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= Supplier modal ================= */
+function SupplierModal({ supplier, onSave, onDelete, onClose }) {
+  const [s, setS] = useState(
+    supplier || { id: uid(), name: "", contact: "", email: "", phone: "", category: "", rating: 0, notes: "" }
+  );
+  const set = (k, v) => setS((x) => ({ ...x, [k]: v }));
+  return (
+    <Modal title={supplier ? "Edit supplier" : "New supplier"} onClose={onClose}>
+      <div className="space-y-4">
+        <Field label="Company name">
+          <input autoFocus value={s.name} onChange={(e) => set("name", e.target.value)} className={inputCls} />
+        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Contact person"><input value={s.contact} onChange={(e) => set("contact", e.target.value)} className={inputCls} /></Field>
+          <Field label="Category"><input value={s.category} onChange={(e) => set("category", e.target.value)} placeholder="e.g. Packaging" className={inputCls} /></Field>
+          <Field label="Email"><input value={s.email} onChange={(e) => set("email", e.target.value)} className={inputCls} /></Field>
+          <Field label="Phone"><input value={s.phone} onChange={(e) => set("phone", e.target.value)} className={inputCls} /></Field>
+        </div>
+        <Field label="Rating">
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} onClick={() => set("rating", n === s.rating ? 0 : n)}>
+                <Star size={20} className={n <= s.rating ? "text-amber-500 fill-amber-400" : "text-stone-300 hover:text-amber-400"} />
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Notes">
+          <textarea value={s.notes} onChange={(e) => set("notes", e.target.value)} rows={3} className={inputCls} />
+        </Field>
+        <div className="flex items-center justify-between pt-2">
+          {supplier ? (
+            <button onClick={() => onDelete(s.id)} className="text-sm text-rose-600 hover:text-rose-700 flex items-center gap-1"><Trash2 size={14} /> Delete supplier</button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-stone-300 hover:bg-stone-50">Cancel</button>
+            <button onClick={() => s.name.trim() && onSave(s)} className="px-4 py-2 text-sm rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-medium">Save supplier</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= Products & inventory forecast ================= */
+function forecastProduct(pr, incoming) {
+  const stock = Number(pr.stock) || 0;
+  const demand = Number(pr.weeklyDemand) || 0;
+  const lead = Number(pr.leadTimeWeeks) || 0;
+  const BUFFER_WEEKS = 2; // safety margin on top of lead time
+
+  const coverWeeks = demand > 0 ? stock / demand : Infinity;
+  const coverWithIncoming = demand > 0 ? (stock + incoming) / demand : Infinity;
+
+  let stockoutDate = null;
+  if (demand > 0) {
+    const dte = new Date();
+    dte.setDate(dte.getDate() + Math.round(coverWeeks * 7));
+    stockoutDate = dte.toISOString().slice(0, 10);
+  }
+
+  // Order enough to cover lead time + buffer, minus what's on hand and already inbound.
+  const suggestedQty = Math.max(0, Math.ceil(demand * (lead + BUFFER_WEEKS) - stock - incoming));
+
+  let status;
+  if (demand === 0) status = { label: "No demand set", color: "slate" };
+  else if (coverWithIncoming <= lead) status = { label: "Order now", color: "rose" };
+  else if (coverWithIncoming <= lead + BUFFER_WEEKS) status = { label: "Reorder soon", color: "amber" };
+  else status = { label: "Healthy", color: "emerald" };
+
+  return { coverWeeks, coverWithIncoming, stockoutDate, suggestedQty, status };
+}
+
+function ProductsView({ data, onOpen, incomingFor, onRestock, supplierName, update }) {
+  const rows = data.products.map((pr) => ({ pr, incoming: incomingFor(pr.id), ...forecastProduct(pr, incomingFor(pr.id)) }));
+  const needsAction = rows.filter((r) => r.status.color === "rose" || r.status.color === "amber");
+
+  const adjustStock = (id, delta) =>
+    update((p) => ({
+      ...p,
+      products: p.products.map((x) => (x.id === id ? { ...x, stock: Math.max(0, (Number(x.stock) || 0) + delta) } : x)),
+    }));
+
+  const fmtCover = (w) => (w === Infinity ? "—" : w < 1 ? `${Math.round(w * 7)} days` : `${w.toFixed(1)} wks`);
+
+  return (
+    <div className="space-y-5">
+      {/* alerts */}
+      {needsAction.length > 0 && (
+        <div className="bg-white border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 font-semibold text-sm mb-2">
+            <AlertTriangle size={16} className="text-amber-600" /> Reorder recommendations
+          </div>
+          <div className="space-y-1.5">
+            {needsAction.map(({ pr, suggestedQty, stockoutDate, status }) => (
+              <div key={pr.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <Chip color={status.color}>{status.label}</Chip>
+                <span className="font-medium">{pr.name}</span>
+                <span className="text-stone-500">
+                  runs out ~{stockoutDate} · suggest ordering {suggestedQty.toLocaleString()} {pr.unit}
+                </span>
+                <button
+                  onClick={() => onRestock(pr, suggestedQty)}
+                  className="ml-auto flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 border border-teal-200 hover:bg-teal-50 rounded-lg px-2.5 py-1"
+                >
+                  <PackagePlus size={13} /> Create restock deal
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* inventory table */}
+      <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-stone-200 flex items-center gap-2">
+          <TrendingUp size={16} className="text-teal-700" />
+          <span className="font-semibold text-sm">Inventory & demand forecast</span>
+          <span className="text-xs text-stone-400 ml-auto hidden sm:block">
+            Incoming = quantities on open deals (deals in your last stage count as delivered)
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold">Product</th>
+                <th className="text-left px-4 py-3 font-semibold">Supplier</th>
+                <th className="text-right px-4 py-3 font-semibold">On hand</th>
+                <th className="text-right px-4 py-3 font-semibold">Incoming</th>
+                <th className="text-right px-4 py-3 font-semibold">Weekly demand</th>
+                <th className="text-right px-4 py-3 font-semibold">Cover</th>
+                <th className="text-left px-4 py-3 font-semibold">Runs out</th>
+                <th className="text-left px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ pr, incoming, coverWeeks, stockoutDate, suggestedQty, status }) => (
+                <tr key={pr.id} className="border-t border-stone-100 hover:bg-stone-50">
+                  <td className="px-4 py-3 cursor-pointer" onClick={() => onOpen(pr)}>
+                    <div className="font-medium">{pr.name}</div>
+                    <div className="text-xs text-stone-400">{[pr.category, pr.sku].filter(Boolean).join(" · ")}</div>
+                  </td>
+                  <td className="px-4 py-3 text-stone-600">{supplierName(pr.supplierId)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    <div className="inline-flex items-center gap-1">
+                      <button onClick={() => adjustStock(pr.id, -(Number(pr.adjustStep) || 100))} className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-500 text-xs leading-none">−</button>
+                      <span className="w-16 text-right">{(Number(pr.stock) || 0).toLocaleString()} {pr.unit}</span>
+                      <button onClick={() => adjustStock(pr.id, Number(pr.adjustStep) || 100)} className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-500 text-xs leading-none">+</button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-stone-600">{incoming ? `${incoming.toLocaleString()} ${pr.unit}` : "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-stone-600">{Number(pr.weeklyDemand) ? `${Number(pr.weeklyDemand).toLocaleString()} ${pr.unit}` : "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmtCover(coverWeeks)}</td>
+                  <td className="px-4 py-3 text-stone-600 whitespace-nowrap">{stockoutDate || "—"}</td>
+                  <td className="px-4 py-3"><Chip color={status.color}>{status.label}</Chip></td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {suggestedQty > 0 && (
+                        <button onClick={() => onRestock(pr, suggestedQty)} title={`Create restock deal (${suggestedQty.toLocaleString()} ${pr.unit})`}
+                          className="p-1.5 rounded-lg hover:bg-teal-50 text-teal-700"><PackagePlus size={15} /></button>
+                      )}
+                      <button onClick={() => onOpen(pr)} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400"><Pencil size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-stone-400">No products yet — add your first strain or product.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p className="text-xs text-stone-400 max-w-2xl">
+        Forecast logic: cover = on hand ÷ weekly demand. A product flags <b>Order now</b> when stock plus incoming
+        won't outlast the supplier's lead time, and <b>Reorder soon</b> within a 2-week buffer after that.
+        The suggested quantity covers lead time + 2 weeks of demand, minus what you already have on hand or inbound.
+      </p>
+    </div>
+  );
+}
+
+/* ================= Product modal ================= */
+function ProductModal({ product, data, onSave, onDelete, onClose }) {
+  const [p, setP] = useState(
+    product || {
+      id: uid(), name: "", category: "", sku: "", unit: "g",
+      stock: "", weeklyDemand: "", leadTimeWeeks: "", adjustStep: 100,
+      supplierId: data.suppliers[0]?.id || null, notes: "",
+    }
+  );
+  const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
+  return (
+    <Modal title={product ? "Edit product" : "New product"} onClose={onClose} wide>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Product / strain name">
+            <input autoFocus value={p.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Lemon Strawz" className={inputCls} />
+          </Field>
+          <Field label="Category / type">
+            <input value={p.category} onChange={(e) => set("category", e.target.value)} placeholder="e.g. Hybrid, Indica, Packaging" className={inputCls} />
+          </Field>
+          <Field label="SKU / code">
+            <input value={p.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Preferred supplier">
+            <select value={p.supplierId || ""} onChange={(e) => set("supplierId", e.target.value || null)} className={inputCls}>
+              <option value="">— none —</option>
+              {data.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <Field label="Unit">
+            <input value={p.unit} onChange={(e) => set("unit", e.target.value)} placeholder="g / kg / units" className={inputCls} />
+          </Field>
+          <Field label="On hand">
+            <input type="number" value={p.stock} onChange={(e) => set("stock", e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Weekly demand">
+            <input type="number" value={p.weeklyDemand} onChange={(e) => set("weeklyDemand", e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Lead time (wks)">
+            <input type="number" value={p.leadTimeWeeks} onChange={(e) => set("leadTimeWeeks", e.target.value)} className={inputCls} />
+          </Field>
+        </div>
+        <Field label="Quick-adjust step (for the +/− buttons on the inventory table)">
+          <input type="number" value={p.adjustStep ?? 100} onChange={(e) => set("adjustStep", e.target.value)} className={inputCls + " w-32"} />
+        </Field>
+        <Field label="Notes">
+          <textarea value={p.notes} onChange={(e) => set("notes", e.target.value)} rows={2} placeholder="Aroma profile, tier, packaging specs…" className={inputCls} />
+        </Field>
+        <div className="flex items-center justify-between pt-2">
+          {product ? (
+            <button onClick={() => onDelete(p.id)} className="text-sm text-rose-600 hover:text-rose-700 flex items-center gap-1"><Trash2 size={14} /> Delete product</button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-stone-300 hover:bg-stone-50">Cancel</button>
+            <button onClick={() => p.name.trim() && onSave(p)} className="px-4 py-2 text-sm rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-medium">Save product</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<SupplierCRM />);
+  </script>
+</body>
+</html>
